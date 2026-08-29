@@ -276,9 +276,7 @@ def stock_summary(
             {
                 "name": r[0],
                 "sku": r[1],
-                "barcode": r[1],
-                "qty": float(r[2]),
-                "qty_delta_sum": float(r[2]),
+                "qty_delta": float(r[2]),
             }
             for r in adj_rows
         ]
@@ -288,7 +286,7 @@ def stock_summary(
             "to": d_to.isoformat(),
             "items": items,
             "mode": "stock_adjustment",
-            "total_amount": sum(abs(i["qty"]) for i in items),
+            "total_amount": sum(abs(i["qty_delta"]) for i in items),
             "note": "Sum of stock_adjustment qty deltas.",
         }
 
@@ -322,8 +320,6 @@ def stock_summary(
         {
             "name": r[0],
             "sku": r[1],
-            "barcode": r[1],
-            "qty": float(r[2]),
             "qty_sold": float(r[2]),
             "amount": float(r[3]),
         }
@@ -336,45 +332,79 @@ def stock_summary(
         "items": items,
         "mode": "units_sold",
         "total_amount": sum(i["amount"] for i in items),
-        "note": "No stock adjustments yet — showing units sold in this date range (SKU as barcode).",
+        "note": "No stock adjustments yet — showing units sold in this date range.",
     }
 
 
 def low_stock_alert(db: Session, tenant_id: uuid.UUID, **kwargs) -> dict[str, Any]:
     data = stock_summary(db, tenant_id, **kwargs)
     threshold = float(kwargs.get("threshold") or 5)
-    # For units_sold mode, "low stock" isn't meaningful — show slow movers (qty <= threshold)
-    low = [i for i in data["items"] if float(i.get("qty") or 0) <= threshold]
+    mode = data.get("mode")
+    if mode == "units_sold":
+        # Without on-hand stock, surface slow movers (low qty sold) as a reorder proxy
+        items = []
+        for i in data["items"]:
+            sold = float(i.get("qty_sold") or 0)
+            if sold <= threshold:
+                items.append({
+                    "name": i["name"],
+                    "sku": i.get("sku"),
+                    "qty_sold": sold,
+                    "amount": float(i.get("amount") or 0),
+                })
+        return {
+            "report": "low_stock_alert",
+            "from": data.get("from"),
+            "to": data.get("to"),
+            "threshold": threshold,
+            "items": items,
+            "mode": mode,
+            "total_amount": sum(i["amount"] for i in items),
+            "note": f"No on-hand stock yet — slow movers with qty sold ≤ {threshold:g} in this range.",
+        }
+
+    items = []
+    for i in data["items"]:
+        delta = float(i.get("qty_delta") or i.get("qty") or 0)
+        if delta <= threshold:
+            items.append({
+                "name": i["name"],
+                "sku": i.get("sku"),
+                "qty_delta": delta,
+            })
     return {
         "report": "low_stock_alert",
         "from": data.get("from"),
         "to": data.get("to"),
         "threshold": threshold,
-        "items": low,
-        "mode": data.get("mode"),
-        "note": data.get("note"),
-        "total_amount": sum(float(i.get("amount") or i.get("qty") or 0) for i in low),
+        "items": items,
+        "mode": mode,
+        "total_amount": sum(abs(i["qty_delta"]) for i in items),
+        "note": data.get("note") or f"Items with stock qty delta ≤ {threshold:g}.",
     }
 
 
 def barcode_stock(db: Session, tenant_id: uuid.UUID, **kwargs) -> dict[str, Any]:
     data = stock_summary(db, tenant_id, **kwargs)
-    items = [
-        {
-            "barcode": i.get("barcode") or i.get("sku") or "—",
+    mode = data.get("mode")
+    items = []
+    for i in data["items"]:
+        row = {
+            "barcode": i.get("sku") or "—",
             "name": i["name"],
-            "sku": i.get("sku"),
-            "qty": float(i.get("qty") or 0),
-            "amount": float(i["amount"]) if i.get("amount") is not None else None,
         }
-        for i in data["items"]
-    ]
+        if mode == "units_sold":
+            row["qty_sold"] = float(i.get("qty_sold") or 0)
+            row["amount"] = float(i.get("amount") or 0)
+        else:
+            row["qty_delta"] = float(i.get("qty_delta") or i.get("qty") or 0)
+        items.append(row)
     return {
         "report": "barcode_stock",
         "from": data.get("from"),
         "to": data.get("to"),
         "items": items,
-        "mode": data.get("mode"),
+        "mode": mode,
         "total_amount": data.get("total_amount"),
         "note": data.get("note"),
     }
