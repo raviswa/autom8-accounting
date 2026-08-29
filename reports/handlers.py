@@ -89,7 +89,13 @@ def weekly_sales_summary(
         b["txn_count"] += 1
         b["amount"] += float(tx.amount or 0)
     weeks = sorted(buckets.values(), key=lambda x: x["week"])
-    return {"report": "weekly_sales_summary", "weeks": weeks}
+    return {
+        "report": "weekly_sales_summary",
+        "from": d_from.isoformat(),
+        "to": d_to.isoformat(),
+        "weeks": weeks,
+        "total_amount": sum(w["amount"] for w in weeks),
+    }
 
 
 def item_wise_sales(
@@ -116,18 +122,22 @@ def item_wise_sales(
     if source:
         q = q.filter(FinTransaction.source_system == source)
     rows = q.group_by(FinItem.name, FinItem.source_ref).order_by(func.sum(FinTransactionLine.line_amount).desc()).limit(200).all()
+    items = [
+        {
+            "name": r[0],
+            "sku": r[1],
+            "qty": float(r[2]),
+            "line_amount": float(r[3]),
+            "line_tax": float(r[4]),
+        }
+        for r in rows
+    ]
     return {
         "report": "item_wise_sales",
-        "items": [
-            {
-                "name": r[0],
-                "sku": r[1],
-                "qty": float(r[2]),
-                "line_amount": float(r[3]),
-                "line_tax": float(r[4]),
-            }
-            for r in rows
-        ],
+        "from": d_from.isoformat(),
+        "to": d_to.isoformat(),
+        "items": items,
+        "total_amount": sum(i["line_amount"] for i in items),
     }
 
 
@@ -144,21 +154,25 @@ def day_book(
     if source:
         q = q.filter(FinTransaction.source_system == source)
     rows = q.order_by(FinTransaction.date, FinTransaction.created_at).limit(500).all()
+    entries = [
+        {
+            "id": str(t.id),
+            "date": t.date.isoformat(),
+            "type": t.type.value if hasattr(t.type, "value") else str(t.type),
+            "source_ref": t.source_ref,
+            "amount": float(t.amount or 0),
+            "tax_amount": float(t.tax_amount or 0),
+            "payment_mode": t.payment_mode,
+            "category": t.category,
+        }
+        for t in rows
+    ]
     return {
         "report": "day_book",
-        "entries": [
-            {
-                "id": str(t.id),
-                "date": t.date.isoformat(),
-                "type": t.type.value if hasattr(t.type, "value") else str(t.type),
-                "source_ref": t.source_ref,
-                "amount": float(t.amount or 0),
-                "tax_amount": float(t.tax_amount or 0),
-                "payment_mode": t.payment_mode,
-                "category": t.category,
-            }
-            for t in rows
-        ],
+        "from": d_from.isoformat(),
+        "to": d_to.isoformat(),
+        "entries": entries,
+        "total_amount": sum(e["amount"] for e in entries),
     }
 
 
@@ -169,17 +183,23 @@ def hourly_sales_heatmap(
     rows = _sales_q(db, tenant_id, d_from, d_to, source).all()
     # 7 x 24 matrix keyed by weekday 0=Mon
     matrix = [[0.0 for _ in range(24)] for _ in range(7)]
+    total = 0.0
     for tx in rows:
         created = tx.created_at or datetime.combine(tx.date, datetime.min.time())
         if created.tzinfo:
             created = created.replace(tzinfo=None)
         wd = tx.date.weekday()
         hour = created.hour
-        matrix[wd][hour] += float(tx.amount or 0)
+        amt = float(tx.amount or 0)
+        matrix[wd][hour] += amt
+        total += amt
     return {
         "report": "hourly_sales_heatmap",
+        "from": d_from.isoformat(),
+        "to": d_to.isoformat(),
         "weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
         "matrix": matrix,
+        "total_amount": total,
     }
 
 
@@ -195,9 +215,13 @@ def counter_wise_sales(
         b = counters.setdefault(key, {"counter": key, "txn_count": 0, "amount": 0.0})
         b["txn_count"] += 1
         b["amount"] += float(tx.amount or 0)
+    counter_rows = sorted(counters.values(), key=lambda x: -x["amount"])
     return {
         "report": "counter_wise_sales",
-        "counters": sorted(counters.values(), key=lambda x: -x["amount"]),
+        "from": d_from.isoformat(),
+        "to": d_to.isoformat(),
+        "counters": counter_rows,
+        "total_amount": sum(c["amount"] for c in counter_rows),
     }
 
 
