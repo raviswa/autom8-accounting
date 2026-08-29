@@ -162,6 +162,9 @@ class FinTransaction(Base):
         JSONType(), nullable=False, server_default=text("'{}'")
     )
     payment_mode: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    occurred_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

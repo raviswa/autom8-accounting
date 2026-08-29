@@ -132,12 +132,15 @@ def item_wise_sales(
         }
         for r in rows
     ]
+    # Match daily/header totals: amount = taxable + tax
+    total_amount = sum(i["line_amount"] + i["line_tax"] for i in items)
     return {
         "report": "item_wise_sales",
         "from": d_from.isoformat(),
         "to": d_to.isoformat(),
         "items": items,
-        "total_amount": sum(i["line_amount"] for i in items),
+        "total_amount": total_amount,
+        "total_tax": sum(i["line_tax"] for i in items),
     }
 
 
@@ -179,20 +182,31 @@ def day_book(
 def hourly_sales_heatmap(
     db: Session, tenant_id: uuid.UUID, *, date_from=None, date_to=None, source=None, **_
 ) -> dict[str, Any]:
+    from zoneinfo import ZoneInfo
+
     d_from, d_to = _parse_range(date_from, date_to)
     rows = _sales_q(db, tenant_id, d_from, d_to, source).all()
-    # 7 x 24 matrix keyed by weekday 0=Mon
+    # 7 x 24 matrix keyed by weekday 0=Mon — bucket by sale time in Asia/Kolkata
+    ist = ZoneInfo("Asia/Kolkata")
     matrix = [[0.0 for _ in range(24)] for _ in range(7)]
     total = 0.0
+    timed = 0
+    untimed = 0
     for tx in rows:
-        created = tx.created_at or datetime.combine(tx.date, datetime.min.time())
-        if created.tzinfo:
-            created = created.replace(tzinfo=None)
-        wd = tx.date.weekday()
-        hour = created.hour
         amt = float(tx.amount or 0)
-        matrix[wd][hour] += amt
         total += amt
+        when = getattr(tx, "occurred_at", None)
+        if when is None:
+            # No sale timestamp (legacy ingest) — skip hour bucket rather than use ingest created_at
+            untimed += 1
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=ZoneInfo("UTC"))
+        local = when.astimezone(ist)
+        wd = local.weekday()
+        hour = local.hour
+        matrix[wd][hour] += amt
+        timed += 1
     return {
         "report": "hourly_sales_heatmap",
         "from": d_from.isoformat(),
@@ -200,6 +214,14 @@ def hourly_sales_heatmap(
         "weekdays": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
         "matrix": matrix,
         "total_amount": total,
+        "timed_txn_count": timed,
+        "untimed_txn_count": untimed,
+        "note": (
+            "Hours use sale time (Asia/Kolkata). "
+            "Re-run ledger backfill after deploy if many cells are empty — older rows lacked occurred_at."
+            if untimed
+            else "Hours use sale time (Asia/Kolkata)."
+        ),
     }
 
 

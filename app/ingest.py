@@ -142,6 +142,11 @@ def ingest_normalized(db: Session, nt: NormalizedTransaction) -> IngestResult:
         .one_or_none()
     )
     if existing:
+        # Refresh sale timestamp on re-ingest (backfill) so heatmaps can recover hours
+        if nt.occurred_at and (
+            existing.occurred_at is None or existing.occurred_at != nt.occurred_at
+        ):
+            existing.occurred_at = nt.occurred_at
         _append_sync_log(
             db,
             tenant_id=nt.tenant_id,
@@ -196,6 +201,7 @@ def ingest_normalized(db: Session, nt: NormalizedTransaction) -> IngestResult:
             source_system=nt.source_system,
             source_ref=nt.source_ref,
             date=nt.txn_date,
+            occurred_at=nt.occurred_at,
             type=TransactionType(nt.txn_type),
             category=nt.category,
             party_id=party_id,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 from uuid import UUID
@@ -28,21 +28,32 @@ def _d(value: Any, default: str = "0") -> Decimal:
         return Decimal(default)
 
 
-def _parse_date(raw: dict[str, Any]) -> date:
-    for key in ("date", "occurred_at", "paid_at", "created_at"):
+def _parse_datetime(raw: dict[str, Any]) -> Optional[datetime]:
+    for key in ("occurred_at", "date", "paid_at", "created_at"):
         val = raw.get(key)
         if not val:
             continue
+        if isinstance(val, datetime):
+            return val if val.tzinfo else val.replace(tzinfo=timezone.utc)
         if isinstance(val, date) and not isinstance(val, datetime):
-            return val
+            return datetime(val.year, val.month, val.day, tzinfo=timezone.utc)
         s = str(val).replace("Z", "+00:00")
         try:
-            return datetime.fromisoformat(s).date()
+            dt = datetime.fromisoformat(s)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
         except ValueError:
             try:
-                return date.fromisoformat(s[:10])
+                d = date.fromisoformat(s[:10])
+                return datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
             except ValueError:
                 continue
+    return None
+
+
+def _parse_date(raw: dict[str, Any]) -> date:
+    dt = _parse_datetime(raw)
+    if dt:
+        return dt.date()
     return date.today()
 
 
@@ -153,6 +164,7 @@ def translate(raw_event: dict[str, Any]) -> NormalizedTransaction:
         source_system=SOURCE_SYSTEM,
         source_ref=source_ref,
         txn_date=_parse_date(raw_event),
+        occurred_at=_parse_datetime(raw_event),
         txn_type=txn_type,
         amount=amount.quantize(Decimal("0.01")),
         tax_amount=tax_amount.quantize(Decimal("0.01")),

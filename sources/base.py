@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional, Protocol
 from uuid import UUID
@@ -42,6 +42,7 @@ class NormalizedTransaction:
     payment_mode: Optional[str] = None
     party: Optional[NormalizedParty] = None
     lines: list[NormalizedLine] = field(default_factory=list)
+    occurred_at: Optional[datetime] = None
 
 
 class SourceAdapter(Protocol):
