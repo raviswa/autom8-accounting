@@ -1,16 +1,24 @@
 # autom8-accounting
 
-Source-agnostic **transaction ledger** + (later) report engine + outbound accounting sinks.
+Source-agnostic **transaction ledger** + report engine + outbound accounting sinks.
 
 This is **not** a double-entry accounting system. Zoho Books / Tally own posting, GST filing, and GL.
 
-## This phase (D1 + D2)
+## Phases shipped
 
-- Canonical `fin_*` schema (Postgres, own instance)
-- Autom8 webhook ingest → `fin_transactions` / lines / parties / items
-- Munafe backend emits events via `emitLedgerEvent` (parallel to existing `pushPaidSaleToZoho`)
+- **D1–D2:** Canonical `fin_*` schema, Autom8 webhook ingest, line/header reconcile
+- **P3:** `sinks/zoho_books` + `sinks/tally` (dual mode: `xml_http` | `file_export`)
+- **P4:** Report registry (9 free + paid placeholders), `423 Locked` gating
+- **P5:** Source stubs — shopify / woocommerce / csv_upload / generic_webhook
 
-Deferred: Zoho sink, Reports tab, Shopify/Woo/Tally adapters.
+## Tally delivery modes
+
+Owner picks in Munafe **Integrations → Tally**:
+
+| Mode | Config | Behavior |
+|------|--------|----------|
+| `xml_http` | `gateway_url` | POST Tally XML to local/gateway HTTP server |
+| `file_export` | `export_dir` (or `TALLY_EXPORT_DIR`) | Write `.xml` voucher files for import |
 
 ## Stack
 
@@ -20,25 +28,20 @@ Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic · Postgres
 
 ```bash
 python -m venv .venv
-# Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env   # set DATABASE_URL + INGEST_WEBHOOK_SECRET
+cp .env.example .env
 alembic upgrade head
 uvicorn app.main:app --reload --port 8090
 ```
 
-## Ingest
+## Env
 
-`POST /ingest/autom8` with header `X-Autom8-Signature: sha256=<hmac_hex>`  
-HMAC-SHA256 of raw body using `INGEST_WEBHOOK_SECRET`.
+**autom8-accounting Railway:** `DATABASE_URL`, `INGEST_WEBHOOK_SECRET`, optional `TALLY_EXPORT_DIR`  
+**autom8-backend / chat Railway:** `LEDGER_INGEST_URL`, `LEDGER_INGEST_SECRET` (same secret)
 
-Munafe env (backend Railway): `LEDGER_INGEST_URL`, `LEDGER_INGEST_SECRET` (same secret).
+## Zoho cutover note
 
-## Validation rules (this phase)
-
-1. UNIQUE `(tenant_id, source_system, source_ref)` — no duplicate ingestion  
-3. Header amount == Σ(line_amount + line_tax) within ₹0.02  
-4. Concurrent webhooks safe via DB unique + transactional insert  
+Keep Munafe `pushPaidSaleToZoho` in parallel until ledger-sink output is reconciled against it for the same sales.
 
 ## Remote
 

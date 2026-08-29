@@ -27,8 +27,15 @@ def get_engine():
     global _engine, SessionLocal
     if _engine is None:
         url = get_database_url()
-        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-        _engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
+        connect_args = {}
+        engine_kwargs = {"pool_pre_ping": True}
+        if url.startswith("sqlite"):
+            connect_args["check_same_thread"] = False
+            if ":memory:" in url:
+                from sqlalchemy.pool import StaticPool
+
+                engine_kwargs["poolclass"] = StaticPool
+        _engine = create_engine(url, connect_args=connect_args, **engine_kwargs)
         SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
     return _engine
 

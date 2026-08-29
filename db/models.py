@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -219,4 +220,32 @@ class FinSyncLog(Base):
     error_detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     attempted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class FinSinkConfig(Base):
+    """Per-tenant outbound sink settings (Zoho Books, Tally, …)."""
+
+    __tablename__ = "fin_sink_configs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "system", name="uq_fin_sink_configs_tenant_system"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False, index=True)
+    system: Mapped[str] = mapped_column(String(64), nullable=False)  # zoho_books | tally
+    is_active: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    # Tally: delivery_mode = xml_http | file_export; Zoho: org/api domains etc.
+    config: Mapped[dict[str, Any]] = mapped_column(
+        JSONType(), nullable=False, server_default=text("'{}'")
+    )
+    # Tokens / secrets — treat as sensitive; encrypt at rest in production.
+    credentials: Mapped[dict[str, Any]] = mapped_column(
+        JSONType(), nullable=False, server_default=text("'{}'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
