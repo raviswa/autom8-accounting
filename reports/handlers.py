@@ -163,10 +163,10 @@ def day_book(
             "date": t.date.isoformat(),
             "type": t.type.value if hasattr(t.type, "value") else str(t.type),
             "source_ref": t.source_ref,
+            "channel": t.category or "—",
+            "payment_mode": (t.payment_mode or "").strip() or "—",
             "amount": float(t.amount or 0),
             "tax_amount": float(t.tax_amount or 0),
-            "payment_mode": t.payment_mode,
-            "category": t.category,
         }
         for t in rows
     ]

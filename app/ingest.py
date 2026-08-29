@@ -142,11 +142,13 @@ def ingest_normalized(db: Session, nt: NormalizedTransaction) -> IngestResult:
         .one_or_none()
     )
     if existing:
-        # Refresh sale timestamp on re-ingest (backfill) so heatmaps can recover hours
+        # Refresh sale timestamp / payment mode on re-ingest (backfill)
         if nt.occurred_at and (
             existing.occurred_at is None or existing.occurred_at != nt.occurred_at
         ):
             existing.occurred_at = nt.occurred_at
+        if nt.payment_mode and not (existing.payment_mode or "").strip():
+            existing.payment_mode = nt.payment_mode
         _append_sync_log(
             db,
             tenant_id=nt.tenant_id,

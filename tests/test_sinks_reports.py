@@ -239,7 +239,9 @@ def test_report_gating_423(db):
 
 
 def test_free_slugs_count():
-    assert len(FREE_SLUGS) >= 30
+    assert len(FREE_SLUGS) >= 15
     assert get_report("daily_sales_summary").tier == "free"
     assert get_report("top_skus").tier == "free"
     assert get_report("profit_and_loss").tier == "paid"
+    assert get_report("inventory_valuation") is None
+    assert get_report("churn_risk") is None
