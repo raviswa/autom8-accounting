@@ -212,8 +212,9 @@ def test_report_gating_423(db):
     client = TestClient(fastapi_app)
     headers = {"X-Ledger-Secret": "test-secret"}
 
+    # Sole paid teaser stays locked on free tier
     r = client.get(
-        f"/reports/top_skus?tenant_id={TENANT}&tier=free",
+        f"/reports/profit_and_loss?tenant_id={TENANT}&tier=free",
         headers=headers,
     )
     assert r.status_code == 423
@@ -226,15 +227,19 @@ def test_report_gating_423(db):
     assert r2.status_code == 200
     assert r2.json()["data"]["report"] == "daily_sales_summary"
 
+    # Former paid report is unlocked on free/demo
     r3 = client.get(
-        f"/reports/top_skus?tenant_id={TENANT}&tier=paid",
+        f"/reports/top_skus?tenant_id={TENANT}&tier=free",
         headers=headers,
     )
     assert r3.status_code == 200
+    assert r3.json()["data"]["report"] == "top_skus"
+
     fastapi_app.dependency_overrides.clear()
 
 
 def test_free_slugs_count():
-    assert len(FREE_SLUGS) == 9
+    assert len(FREE_SLUGS) >= 30
     assert get_report("daily_sales_summary").tier == "free"
-    assert get_report("top_skus").tier == "paid"
+    assert get_report("top_skus").tier == "free"
+    assert get_report("profit_and_loss").tier == "paid"
