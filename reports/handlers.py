@@ -15,8 +15,18 @@ from db.models import FinItem, FinTransaction, FinTransactionLine, TransactionTy
 
 def _parse_range(date_from: Optional[str], date_to: Optional[str]) -> tuple[date, date]:
     today = date.today()
-    d_to = date.fromisoformat(date_to) if date_to else today
-    d_from = date.fromisoformat(date_from) if date_from else (d_to - timedelta(days=30))
+    raw_to = (str(date_to).strip()[:10] if date_to else "") or ""
+    raw_from = (str(date_from).strip()[:10] if date_from else "") or ""
+    try:
+        d_to = date.fromisoformat(raw_to) if raw_to else today
+    except ValueError:
+        d_to = today
+    try:
+        d_from = date.fromisoformat(raw_from) if raw_from else (d_to - timedelta(days=30))
+    except ValueError:
+        d_from = d_to - timedelta(days=30)
+    if d_from > d_to:
+        d_from, d_to = d_to, d_from
     return d_from, d_to
 
 
